@@ -1,14 +1,19 @@
 {
   "name": "radar",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "description": "A low level database access layer",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "radar"
+  ],
+  "author": "Cody Stoltman",
+  "license": "MIT",
   "dependencies": {
-    "lodash": "^4.0.0"
+    "lodash": "~4.0.0"
+  },
+  "devDependencies": {
+
   }
 }
