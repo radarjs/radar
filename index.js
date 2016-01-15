@@ -1,10 +1,24 @@
-var SQLBuilder = require('machinepack-sql-builder');
-var Postgres = require('machinepack-postgresql');
+/**
+ * Dependencies
+ */
+
 var _ = require('lodash');
+
+/**
+ * Radar Interface
+ *
+ * @driver {Object} - Driver to use for accessing data
+ * @connectionString {String} - Connection string for given datastore
+ * @connection {Object} - Active connection object
+ */
 
 var Radar = module.exports = function(options) {
   if(!(this instanceof Radar)) {
     return new Radar(options);
+  }
+
+  if(!options.driver) {
+    throw new Error('Missing a driver for Radar to use.');
   }
 
   if(options.connectionString) {
@@ -15,7 +29,12 @@ var Radar = module.exports = function(options) {
     this.connection = options.connection;
   }
 
+  // Store the driver we will be using
+  this.driver = options.driver;
+
+  // Build an empty query to work with
   this.query = {};
+
   return this;
 };
 
@@ -45,6 +64,7 @@ Radar.prototype.select = function(values) {
   return this;
 };
 
+
 // From
 Radar.prototype.from = function(values) {
 
@@ -64,6 +84,7 @@ Radar.prototype.from = function(values) {
   return this;
 };
 
+
 // Where
 Radar.prototype.where = function(values) {
   var criteria = this.query.where || {};
@@ -72,6 +93,7 @@ Radar.prototype.where = function(values) {
 
   return this;
 };
+
 
 // Schema
 Radar.prototype.schema = function(schema) {
@@ -86,6 +108,7 @@ Radar.prototype.schema = function(schema) {
   return this;
 };
 
+
 // Insert
 Radar.prototype.insert = function(values) {
   var inserted = this.query.insert || {};
@@ -94,6 +117,7 @@ Radar.prototype.insert = function(values) {
 
   return this;
 };
+
 
 // Into
 Radar.prototype.into = function(value) {
@@ -104,67 +128,25 @@ Radar.prototype.into = function(value) {
 
 // Exec
 Radar.prototype.exec = function(cb) {
-  var self = this;
 
-  SQLBuilder.generateSql({
-    dialect: 'postgres',
-    query: this.query
-  }).exec({
+  // Execute the query
+  var options = { query: this.query };
+  if(this.connectionString) {
+    options.connectionString = this.connectionString;
+  }
+  else if(this.connection) {
+    options.connection = this.connection;
+  }
+
+  this.driver.executeQuery(options).exec({
     error: function(err) {
-      return cb(err);
+      cb(err);
     },
-    success: function(query) {
-
-      // Reset the query
-      self.query = {};
-
-      // If there is a connection string, open a new connection
-      if(self.connectionString) {
-        Postgres.getConnection({
-          connectionString: self.connectionString
-        }).exec({
-          error: cb,
-          success: function(conn) {
-
-            // Run the query
-            Postgres.runQuery({
-              connection: conn.client,
-              query: query
-            }).exec({
-              error: cb,
-              success: function(data) {
-                // Release the connection
-                Postgres.releaseConnection({
-                  release: conn.release
-                }).exec({
-                  error: cb,
-                  success: function() {
-                    cb(null, data);
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-
-      // Handle a pre-made connection
-      if(self.connection) {
-        // Run the query
-        Postgres.runQuery({
-          connection: self.connection,
-          query: query
-        }).exec({
-          error: cb,
-          success: function(data) {
-            cb(null, data);
-          }
-        });
-      }
-
-      // return cb(null, query);
+    success: function(data) {
+      cb(null, data);
     }
   });
+
 };
 
 
@@ -172,9 +154,9 @@ Radar.prototype.exec = function(cb) {
 Radar.txn = function(options, cb) {
   if(!options) { return cb(new Error('Missing Options for Radar Transaction.')); }
   if(!options.connectionString) { return cb(new Error('Missing Connection String for Radar Transaction.')); }
+  if(!options.driver) { return cb(new Error('Missing Driver for Radar Transaction.')); }
 
-  // Open a connection
-  Postgres.getConnection({
+  options.driver.getConnection({
     connectionString: options.connectionString
   }).exec({
     error: function(err) {
@@ -185,52 +167,34 @@ Radar.txn = function(options, cb) {
       // Build up a version of Radar that includes the connection
       var radarRunner = function() {
         return new Radar({
-          connection: conn.client
+          connection: conn,
+          driver: options.driver
         });
       };
 
       // Create a rollback function
       var rollback = function(cb) {
-        Postgres.runQuery({
-          connection: conn.client,
-          query: 'ROLLBACK'
+        options.driver.rollbackTransaction({
+          connection: conn
         }).exec({
-          error: function() {
-            Postgres.releaseConnection({
-              release: conn.release
-            }).exec(cb);
-          },
-          success: function() {
-            Postgres.releaseConnection({
-              release: conn.release
-            }).exec(cb);
-          }
+          error: cb,
+          success: cb
         });
       };
 
       // Create a commit function
       var commit = function(cb) {
-        Postgres.runQuery({
-          connection: conn.client,
-          query: 'COMMIT'
+        options.driver.commitTransaction({
+          connection: conn
         }).exec({
-          error: function() {
-            Postgres.releaseConnection({
-              release: conn.release
-            }).exec(cb);
-          },
-          success: function() {
-            Postgres.releaseConnection({
-              release: conn.release
-            }).exec(cb);
-          }
+          error: cb,
+          success: cb
         });
       };
 
       // Call the begin function
-      Postgres.runQuery({
-        connection: conn.client,
-        query: 'BEGIN'
+      options.driver.beginTransaction({
+        connection: conn
       }).exec({
 
         // If theres an error, rollback
@@ -249,4 +213,5 @@ Radar.txn = function(options, cb) {
 
     }
   });
+
 };
