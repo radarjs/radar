@@ -125,6 +125,11 @@ Radar.prototype.into = function(value) {
   return this;
 };
 
+// Limit
+Radar.prototype.limit = function(value) {
+  this.query.limit = value;
+  return this;
+};
 
 // Exec
 Radar.prototype.exec = function(cb) {
